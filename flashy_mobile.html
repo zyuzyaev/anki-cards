@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Mini Anki ES ⇄ RU</title>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+<style>
+:root{
+--bg:#f5f5f7;
+--card:#ffffff;
+--text:#111111;
+--subtle:#8e8e93;
+--accent:#111111;
+--border:rgba(0,0,0,0.06);
+--shadow:0 20px 60px rgba(0,0,0,0.08);
+}
+
+[data-theme="dark"]{
+--bg:#0f0f12;
+--card:#1c1c1f;
+--text:#ffffff;
+--subtle:#8e8e93;
+--accent:#ffffff;
+--border:rgba(255,255,255,0.08);
+--shadow:0 20px 60px rgba(0,0,0,0.6);
+}
+
+*{box-sizing:border-box}
+body{
+margin:0;
+font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;
+background:var(--bg);
+color:var(--text);
+display:flex;
+flex-direction:column;
+align-items:center;
+padding:40px 16px 80px;
+transition:background .25s ease,color .25s ease;
+}
+
+h1{
+font-size:18px;
+font-weight:600;
+margin-bottom:28px;
+letter-spacing:.5px;
+}
+
+.card{
+width:100%;
+max-width:540px;
+min-height:180px;
+background:var(--card);
+border-radius:32px;
+box-shadow:var(--shadow);
+display:flex;
+align-items:center;
+justify-content:center;
+padding:40px;
+font-size:30px;
+text-align:center;
+transition:.2s ease;
+border:1px solid var(--border);
+}
+
+.card:active{transform:scale(.98)}
+
+.controls{
+margin-top:28px;
+display:flex;
+gap:10px;
+flex-wrap:wrap;
+justify-content:center;
+}
+
+button{
+border:none;
+border-radius:20px;
+padding:12px 20px;
+font-size:14px;
+font-weight:500;
+background:var(--accent);
+color:var(--bg);
+cursor:pointer;
+transition:.15s ease;
+}
+
+button.secondary{
+background:transparent;
+color:var(--text);
+border:1px solid var(--border);
+}
+
+button:hover{opacity:.85}
+
+.section{
+width:100%;
+max-width:540px;
+margin-top:40px;
+display:none;
+}
+
+input,textarea{
+width:100%;
+padding:12px;
+border-radius:16px;
+border:1px solid var(--border);
+margin-bottom:10px;
+font-size:15px;
+background:var(--card);
+color:var(--text);
+}
+
+.preview-card{
+background:var(--card);
+border-radius:20px;
+padding:16px;
+box-shadow:var(--shadow);
+margin-bottom:12px;
+border:1px solid var(--border);
+}
+
+.subtle{
+font-size:12px;
+color:var(--subtle);
+margin-top:8px;
+}
+</style>
+</head>
+<body>
+
+<h1>ES ⇄ RU</h1>
+
+<div class="card" id="card">No cards yet</div>
+<div class="subtle" id="progress"></div>
+
+<div class="controls">
+<button id="flipBtn">Flip</button>
+<button id="nextBtn">Next</button>
+<button id="directionBtn" class="secondary">Direction</button>
+<button id="themeBtn" class="secondary">Theme</button>
+<button id="toolsBtn" class="secondary">Tools</button>
+</div>
+
+<div class="section" id="tools">
+<h3>Image → Cards</h3>
+<input type="file" id="imageInput" accept="image/*" />
+<button id="ocrBtn">Extract</button>
+<div id="ocrPreview"></div>
+
+<h3 style="margin-top:30px">Import / Export</h3>
+<button id="exportBtn">Export JSON</button>
+<input type="file" id="importInput" accept="application/json" />
+<button id="replaceBtn" class="secondary">Import (Replace All)</button>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded",()=>{
+
+// FIX: Explicit element bindings (mobile Safari doesn't expose IDs as globals)
+const flipBtn=document.getElementById("flipBtn");
+const nextBtn=document.getElementById("nextBtn");
+const directionBtn=document.getElementById("directionBtn");
+const themeBtn=document.getElementById("themeBtn");
+const toolsBtn=document.getElementById("toolsBtn");
+const tools=document.getElementById("tools");
+const ocrBtn=document.getElementById("ocrBtn");
+const imageInput=document.getElementById("imageInput");
+const ocrPreview=document.getElementById("ocrPreview");
+const exportBtn=document.getElementById("exportBtn");
+const importInput=document.getElementById("importInput");
+const replaceBtn=document.getElementById("replaceBtn");
+
+let cards=JSON.parse(localStorage.getItem("cards")||"[]");
+let theme=localStorage.getItem("theme")||"light";
+document.documentElement.setAttribute("data-theme",theme);
+
+let currentIndex=null,showingFront=true,direction="es-ru";
+
+const cardEl=document.getElementById("card");
+const progressEl=document.getElementById("progress");
+
+function save(){localStorage.setItem("cards",JSON.stringify(cards))}
+function saveTheme(){localStorage.setItem("theme",theme)}
+
+function randomIndex(){if(cards.length<=1)return 0;let i;do{i=Math.floor(Math.random()*cards.length)}while(i===currentIndex);return i}
+
+function showCard(){
+if(!cards.length){cardEl.textContent="No cards yet";progressEl.textContent="";return}
+const c=cards[currentIndex];
+cardEl.textContent=showingFront?(direction==="es-ru"?c.es:c.ru):(direction==="es-ru"?c.ru:c.es);
+progressEl.textContent=`${cards.length} cards`;
+}
+
+function nextCard(){if(!cards.length)return;currentIndex=randomIndex();showingFront=true;showCard()}
+function flipCard(){if(!cards.length)return;showingFront=!showingFront;showCard()}
+function toggleDirection(){direction=direction==="es-ru"?"ru-es":"es-ru";nextCard()}
+
+function addCard(es,ru){
+cards.push({es,ru});
+save();
+currentIndex=cards.length-1;
+showingFront=true;
+showCard();
+}
+
+flipBtn.onclick=flipCard;
+nextBtn.onclick=nextCard;
+directionBtn.onclick=toggleDirection;
+toolsBtn.onclick=()=>tools.style.display=tools.style.display==="block"?"none":"block";
+
+themeBtn.onclick=()=>{
+theme=theme==="light"?"dark":"light";
+document.documentElement.setAttribute("data-theme",theme);
+saveTheme();
+};
+
+/* PREMIUM OCR (NO AUTOTRANSLATE) */
+ocrBtn.onclick=async()=>{
+const file=imageInput.files[0];if(!file)return;
+ocrPreview.innerHTML="Processing...";
+try{
+const result=await Tesseract.recognize(file,'spa+rus');
+const text=result.data.text;
+ocrPreview.innerHTML="";
+
+const pairRegex=/([A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+)\s*[-–—]\s*([A-Za-zА-Яа-яЁё]+)/g;
+let match,count=0;
+
+while((match=pairRegex.exec(text))!==null){
+const es=match[1].trim();
+const ru=match[2].trim();
+if(es&&ru){
+addPreview(es,ru);
+count++;}
+}
+
+if(count===0) ocrPreview.innerHTML="No structured pairs found";
+
+}catch(e){
+ocrPreview.innerHTML="OCR failed: "+e.message;
+}
+};
+
+function addPreview(es,ru){
+const div=document.createElement("div");
+div.className="preview-card";
+div.innerHTML=`
+<input value="${es}" class="es" />
+<input value="${ru}" class="ru" />
+<div style="display:flex;gap:8px;margin-top:10px">
+<button class="save">Save</button>
+<button class="secondary del">Delete</button>
+</div>`;
+
+div.querySelector(".save").onclick=()=>{
+addCard(div.querySelector(".es").value.trim(),div.querySelector(".ru").value.trim());
+div.remove();
+};
+
+div.querySelector(".del").onclick=()=>div.remove();
+
+ocrPreview.appendChild(div);
+}
+
+/* EXPORT */
+exportBtn.onclick=()=>{
+const blob=new Blob([JSON.stringify(cards,null,2)],{type:"application/json"});
+const a=document.createElement("a");
+a.href=URL.createObjectURL(blob);
+a.download="cards.json";
+a.click();
+};
+
+/* IMPORT REPLACE */
+replaceBtn.onclick=()=>{
+const file=importInput.files[0];if(!file)return;
+const reader=new FileReader();
+reader.onload=e=>{
+try{
+const parsed=JSON.parse(e.target.result);
+if(Array.isArray(parsed)){
+cards=parsed.filter(c=>c.es&&c.ru);
+save();
+currentIndex=0;
+showCard();
+alert("Loaded "+cards.length+" cards");
+}
+}catch{alert("Invalid JSON");}
+};
+reader.readAsText(file);
+};
+
+if(cards.length){currentIndex=0;showCard()}
+
+});
+</script>
+</body>
+</html>
