@@ -3,8 +3,11 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Mini Anki ES ⇄ RU</title>
+<title>Lexi — ES ⇄ RU</title>
+
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
 <style>
 :root{
 --bg:#f5f5f7;
@@ -27,6 +30,7 @@
 }
 
 *{box-sizing:border-box}
+
 body{
 margin:0;
 font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;
@@ -36,19 +40,14 @@ display:flex;
 flex-direction:column;
 align-items:center;
 padding:40px 16px 80px;
-transition:background .25s ease,color .25s ease;
+transition:.25s;
 }
 
-h1{
-font-size:18px;
-font-weight:600;
-margin-bottom:28px;
-letter-spacing:.5px;
-}
+h1{font-size:18px;font-weight:600;margin-bottom:28px}
 
 .card{
 width:100%;
-max-width:540px;
+max-width:520px;
 min-height:180px;
 background:var(--card);
 border-radius:32px;
@@ -57,32 +56,28 @@ display:flex;
 align-items:center;
 justify-content:center;
 padding:40px;
-font-size:30px;
+font-size:32px;
 text-align:center;
-transition:.2s ease;
 border:1px solid var(--border);
 }
-
-.card:active{transform:scale(.98)}
 
 .controls{
 margin-top:28px;
 display:flex;
-gap:10px;
 flex-wrap:wrap;
+gap:10px;
 justify-content:center;
 }
 
 button{
 border:none;
-border-radius:20px;
-padding:12px 20px;
+border-radius:18px;
+padding:12px 18px;
 font-size:14px;
 font-weight:500;
 background:var(--accent);
 color:var(--bg);
 cursor:pointer;
-transition:.15s ease;
 }
 
 button.secondary{
@@ -91,47 +86,40 @@ color:var(--text);
 border:1px solid var(--border);
 }
 
-button:hover{opacity:.85}
-
 .section{
 width:100%;
-max-width:540px;
+max-width:520px;
 margin-top:40px;
 display:none;
 }
 
-input,textarea{
+input{
 width:100%;
 padding:12px;
-border-radius:16px;
+border-radius:14px;
 border:1px solid var(--border);
 margin-bottom:10px;
-font-size:15px;
 background:var(--card);
 color:var(--text);
 }
 
 .preview-card{
 background:var(--card);
-border-radius:20px;
-padding:16px;
-box-shadow:var(--shadow);
-margin-bottom:12px;
+border-radius:18px;
+padding:14px;
+margin-bottom:10px;
 border:1px solid var(--border);
 }
 
-.subtle{
-font-size:12px;
-color:var(--subtle);
-margin-top:8px;
-}
+.subtle{font-size:12px;color:var(--subtle);margin-top:8px}
 </style>
 </head>
+
 <body>
 
-<h1>ES ⇄ RU</h1>
+<h1>Lexi</h1>
 
-<div class="card" id="card">No cards yet</div>
+<div class="card" id="card">Loading...</div>
 <div class="subtle" id="progress"></div>
 
 <div class="controls">
@@ -139,161 +127,417 @@ margin-top:8px;
 <button id="nextBtn">Next</button>
 <button id="directionBtn" class="secondary">Direction</button>
 <button id="themeBtn" class="secondary">Theme</button>
+<button id="syncBtn" class="secondary">Sync</button>
 <button id="toolsBtn" class="secondary">Tools</button>
 </div>
 
 <div class="section" id="tools">
-<h3>Image → Cards</h3>
-<input type="file" id="imageInput" accept="image/*" />
-<button id="ocrBtn">Extract</button>
-<div id="ocrPreview"></div>
 
-<h3 style="margin-top:30px">Import / Export</h3>
+<select id="toolSelector" style="margin-bottom:20px">
+<option value="ocr">Image → Cards</option>
+<option value="translate">Translate Word</option>
+<option value="manual">New Pair</option>
+<option value="data">Import / Export</option>
+</select>
+
+<div id="tool_ocr" class="toolPanel">
+<input type="file" id="imageInput" accept="image/*" />
+<button id="ocrBtn">Extract Cards</button>
+<div id="ocrPreview"></div>
+</div>
+
+<div id="tool_translate" class="toolPanel" style="display:none">
+<input id="translateInput" placeholder="Spanish word" />
+<button id="translateBtn">Suggest Translation</button>
+<div id="translatePreview"></div>
+</div>
+
+<div id="tool_manual" class="toolPanel" style="display:none">
+<input id="manualES" placeholder="Spanish" />
+<input id="manualRU" placeholder="Russian" />
+<button id="manualSave">Save Pair</button>
+</div>
+
+<div id="tool_data" class="toolPanel" style="display:none">
 <button id="exportBtn">Export JSON</button>
 <input type="file" id="importInput" accept="application/json" />
-<button id="replaceBtn" class="secondary">Import (Replace All)</button>
+<button id="replaceBtn" class="secondary">Import (Replace)</button>
+</div>
+
 </div>
 
 <script>
-document.addEventListener("DOMContentLoaded",()=>{
 
-// FIX: Explicit element bindings (mobile Safari doesn't expose IDs as globals)
-const flipBtn=document.getElementById("flipBtn");
-const nextBtn=document.getElementById("nextBtn");
-const directionBtn=document.getElementById("directionBtn");
-const themeBtn=document.getElementById("themeBtn");
-const toolsBtn=document.getElementById("toolsBtn");
-const tools=document.getElementById("tools");
-const ocrBtn=document.getElementById("ocrBtn");
-const imageInput=document.getElementById("imageInput");
-const ocrPreview=document.getElementById("ocrPreview");
-const exportBtn=document.getElementById("exportBtn");
-const importInput=document.getElementById("importInput");
-const replaceBtn=document.getElementById("replaceBtn");
+window.addEventListener("DOMContentLoaded",()=>{
 
-let cards=JSON.parse(localStorage.getItem("cards")||"[]");
-let theme=localStorage.getItem("theme")||"light";
-document.documentElement.setAttribute("data-theme",theme);
+/* SUPABASE */
 
-let currentIndex=null,showingFront=true,direction="es-ru";
+const SUPABASE_URL="https://oundvioyxzyqwqfqfpkt.supabase.co";
+const SUPABASE_KEY="sb_publishable_CkfFIL5oAkNj9BMSaOYl6w_1FPy0Rr8";
+
+let client=null;
+
+if(window.supabase){
+client = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+}
+
+/* STATE */
+
+let cards=[];
+let currentIndex=0;
+let showingFront=true;
+let direction="es-ru";
 
 const cardEl=document.getElementById("card");
 const progressEl=document.getElementById("progress");
 
-function save(){localStorage.setItem("cards",JSON.stringify(cards))}
-function saveTheme(){localStorage.setItem("theme",theme)}
-
-function randomIndex(){if(cards.length<=1)return 0;let i;do{i=Math.floor(Math.random()*cards.length)}while(i===currentIndex);return i}
-
 function showCard(){
-if(!cards.length){cardEl.textContent="No cards yet";progressEl.textContent="";return}
-const c=cards[currentIndex];
-cardEl.textContent=showingFront?(direction==="es-ru"?c.es:c.ru):(direction==="es-ru"?c.ru:c.es);
-progressEl.textContent=`${cards.length} cards`;
+
+if(cards.length===0){
+cardEl.textContent="No cards yet";
+progressEl.textContent="";
+return;
 }
 
-function nextCard(){if(!cards.length)return;currentIndex=randomIndex();showingFront=true;showCard()}
-function flipCard(){if(!cards.length)return;showingFront=!showingFront;showCard()}
-function toggleDirection(){direction=direction==="es-ru"?"ru-es":"es-ru";nextCard()}
+const c=cards[currentIndex];
+
+cardEl.textContent = showingFront
+? (direction==="es-ru"?c.es:c.ru)
+: (direction==="es-ru"?c.ru:c.es);
+
+progressEl.textContent = cards.length+" cards";
+
+}
+
+function nextCard(){
+if(cards.length<2) return;
+let i;
+do{i=Math.floor(Math.random()*cards.length)}while(i===currentIndex);
+currentIndex=i;
+showingFront=true;
+showCard();
+}
+
+function flip(){
+showingFront=!showingFront;
+showCard();
+}
+
+function toggleDirection(){
+direction = direction==="es-ru" ? "ru-es" : "es-ru";
+nextCard();
+}
 
 function addCard(es,ru){
+if(!es||!ru) return;
 cards.push({es,ru});
-save();
 currentIndex=cards.length-1;
 showingFront=true;
 showCard();
 }
 
-flipBtn.onclick=flipCard;
-nextBtn.onclick=nextCard;
-directionBtn.onclick=toggleDirection;
-toolsBtn.onclick=()=>tools.style.display=tools.style.display==="block"?"none":"block";
+/* BUTTONS */
+
+document.getElementById("flipBtn").onclick=flip;
+
+document.getElementById("nextBtn").onclick=nextCard;
+
+document.getElementById("directionBtn").onclick=toggleDirection;
+
+/* THEME */
+
+const themeBtn=document.getElementById("themeBtn");
+
+let theme=localStorage.getItem("theme")||"light";
+
+document.documentElement.setAttribute("data-theme",theme);
 
 themeBtn.onclick=()=>{
-theme=theme==="light"?"dark":"light";
+
+theme = theme==="light" ? "dark" : "light";
+
 document.documentElement.setAttribute("data-theme",theme);
-saveTheme();
+
+localStorage.setItem("theme",theme);
+
 };
 
-/* PREMIUM OCR (NO AUTOTRANSLATE) */
+/* TOOLS */
+
+const tools=document.getElementById("tools");
+
+const toolsBtn=document.getElementById("toolsBtn");
+
+toolsBtn.onclick=()=>{
+
+tools.style.display = tools.style.display==="block" ? "none" : "block";
+
+};
+
+const selector=document.getElementById("toolSelector");
+
+selector.onchange=()=>{
+
+const panels=document.querySelectorAll(".toolPanel");
+
+panels.forEach(p=>p.style.display="none");
+
+const active=document.getElementById("tool_"+selector.value);
+
+if(active) active.style.display="block";
+
+};
+
+/* OCR */
+
+const ocrBtn=document.getElementById("ocrBtn");
+const imageInput=document.getElementById("imageInput");
+const ocrPreview=document.getElementById("ocrPreview");
+
 ocrBtn.onclick=async()=>{
-const file=imageInput.files[0];if(!file)return;
+
+const file=imageInput.files[0];
+if(!file) return;
+
 ocrPreview.innerHTML="Processing...";
+
 try{
+
 const result=await Tesseract.recognize(file,'spa+rus');
+
 const text=result.data.text;
+
 ocrPreview.innerHTML="";
 
-const pairRegex=/([A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+)\s*[-–—]\s*([A-Za-zА-Яа-яЁё]+)/g;
-let match,count=0;
+const regex=/([A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+)\s*[-–—]\s*([A-Za-zА-Яа-яЁё]+)/g;
 
-while((match=pairRegex.exec(text))!==null){
-const es=match[1].trim();
-const ru=match[2].trim();
-if(es&&ru){
-addPreview(es,ru);
-count++;}
+let m;
+
+while((m=regex.exec(text))!==null){
+createPreview(m[1],m[2]);
 }
-
-if(count===0) ocrPreview.innerHTML="No structured pairs found";
 
 }catch(e){
-ocrPreview.innerHTML="OCR failed: "+e.message;
+ocrPreview.innerHTML="OCR failed";
 }
+
 };
 
-function addPreview(es,ru){
+function createPreview(es,ru){
+
 const div=document.createElement("div");
+
 div.className="preview-card";
+
 div.innerHTML=`
 <input value="${es}" class="es" />
 <input value="${ru}" class="ru" />
-<div style="display:flex;gap:8px;margin-top:10px">
 <button class="save">Save</button>
 <button class="secondary del">Delete</button>
-</div>`;
+`;
 
-div.querySelector(".save").onclick=()=>{
+const save=div.querySelector(".save");
+const del=div.querySelector(".del");
+
+save.onclick=()=>{
 addCard(div.querySelector(".es").value.trim(),div.querySelector(".ru").value.trim());
 div.remove();
 };
 
-div.querySelector(".del").onclick=()=>div.remove();
+del.onclick=()=>div.remove();
 
 ocrPreview.appendChild(div);
+
 }
+
+/* TRANSLATE */
+
+const translateBtn=document.getElementById("translateBtn");
+const translateInput=document.getElementById("translateInput");
+const translatePreview=document.getElementById("translatePreview");
+
+translateBtn.onclick=async()=>{
+
+const word=translateInput.value.trim();
+
+if(!word) return;
+
+translatePreview.innerHTML="Searching...";
+
+try{
+
+const res=await fetch(`https://api.mymemory.translated.net/get?q=${word}&langpair=es|ru`);
+
+const data=await res.json();
+
+translatePreview.innerHTML="";
+
+const ru=data.responseData.translatedText;
+
+createPreview(word,ru);
+
+translatePreview.appendChild(ocrPreview.lastChild);
+
+}catch{
+
+translatePreview.innerHTML="Translation failed";
+
+}
+
+};
+
+/* MANUAL */
+
+const manualSave=document.getElementById("manualSave");
+
+manualSave.onclick=()=>{
+
+const es=document.getElementById("manualES").value.trim();
+const ru=document.getElementById("manualRU").value.trim();
+
+addCard(es,ru);
+
+};
 
 /* EXPORT */
+
+const exportBtn=document.getElementById("exportBtn");
+
 exportBtn.onclick=()=>{
+
 const blob=new Blob([JSON.stringify(cards,null,2)],{type:"application/json"});
+
 const a=document.createElement("a");
+
 a.href=URL.createObjectURL(blob);
+
 a.download="cards.json";
+
 a.click();
+
 };
 
-/* IMPORT REPLACE */
+/* IMPORT */
+
+const replaceBtn=document.getElementById("replaceBtn");
+
 replaceBtn.onclick=()=>{
-const file=importInput.files[0];if(!file)return;
+
+const file=document.getElementById("importInput").files[0];
+
+if(!file) return;
+
 const reader=new FileReader();
+
 reader.onload=e=>{
+
 try{
-const parsed=JSON.parse(e.target.result);
-if(Array.isArray(parsed)){
-cards=parsed.filter(c=>c.es&&c.ru);
-save();
+
+const data=JSON.parse(e.target.result);
+
+if(Array.isArray(data)){
+
+cards=data.filter(c=>c.es && c.ru);
+
+currentIndex=0;
+
+showCard();
+
+}
+
+}catch{
+alert("Invalid JSON");
+}
+
+};
+
+reader.readAsText(file);
+
+};
+
+/* SYNC + LIVE SYNC */
+
+const syncBtn=document.getElementById("syncBtn");
+
+function dedupeCards(list){
+const map=new Map();
+list.forEach(c=>{
+const key=(c.es+"|"+c.ru).toLowerCase();
+if(!map.has(key)) map.set(key,{es:c.es,ru:c.ru});
+});
+return Array.from(map.values());
+}
+
+let syncing=false;
+
+syncBtn.onclick=async()=>{
+
+if(syncing) return;
+
+if(!client){
+alert("Supabase not configured");
+return;
+}
+
+syncing=true;
+syncBtn.disabled=true;
+syncBtn.textContent="Syncing...";
+
+cards = dedupeCards(cards);
+
+await client
+.from("cards")
+.upsert(cards,{ onConflict:"es,ru" });
+
+const {data,error}=await client.from("cards").select("*");
+
+if(!error && data){
+
+cards = dedupeCards(data.map(c=>({es:c.es,ru:c.ru})));
+
 currentIndex=0;
 showCard();
-alert("Loaded "+cards.length+" cards");
+
 }
-}catch{alert("Invalid JSON");}
-};
-reader.readAsText(file);
+
+syncBtn.textContent="Sync";
+syncBtn.disabled=false;
+syncing=false;
+
 };
 
-if(cards.length){currentIndex=0;showCard()}
+/* LIVE SYNC (realtime updates from Supabase) */
+
+if(client){
+
+client
+.channel("cards-live")
+.on(
+"postgres_changes",
+{event:"*",schema:"public",table:"cards"},
+async()=>{
+
+const {data}=await client.from("cards").select("*");
+
+if(data){
+
+cards = dedupeCards(data.map(c=>({es:c.es,ru:c.ru})));
+
+showCard();
+
+}
+
+}
+)
+.subscribe();
+
+}
+
+showCard();
 
 });
+
 </script>
+
 </body>
 </html>
